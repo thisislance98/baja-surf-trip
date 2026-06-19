@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s http://localhost:5174/api/health)",
+      "Bash(curl *)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "playwright",
+    "duckduckgo",
+    "jira_mcp",
+    "claudia"
+  ]
+}
