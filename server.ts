@@ -11,9 +11,9 @@ dotenv.config();
 const PORT = parseInt(process.env.PORT || '5174', 10);
 const MODEL = 'claude-opus-4-8';
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
-// Local dev: use cached npx path. Railway: playwright-mcp is on PATH after postinstall.
+// Use the bundled @playwright/mcp package — works both locally and on Railway
 const PLAYWRIGHT_MCP_BIN = process.env.PLAYWRIGHT_MCP_BIN
-  || '/Users/I850333/.npm/_npx/9833c18b2d85bc59/node_modules/.bin/playwright-mcp';
+  || new URL('../node_modules/@playwright/mcp/cli.js', import.meta.url).pathname;
 
 // ────────────────────────────────────────────────────────────
 // Playwright MCP client — stdio transport, persistent session
@@ -26,7 +26,12 @@ class PlaywrightMCP {
   private buffer = '';
 
   start() {
-    this.proc = spawn('node', [PLAYWRIGHT_MCP_BIN, '--isolated', '--headless'], {
+    const args = [PLAYWRIGHT_MCP_BIN, '--isolated', '--headless', '--no-sandbox'];
+    // In containers, point at the system Chromium
+    if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
+      args.push('--executable-path', process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH);
+    }
+    this.proc = spawn('node', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     this.proc.stdout!.on('data', (chunk: Buffer) => {
@@ -711,13 +716,13 @@ async function startServer() {
         : `Day ${Math.floor((bajaTime - tripStart.getTime()) / 86400000) + 1} of 6`;
 
     // Build itinerary snapshot for system prompt
-    const sortedItinerary = [...itinerary].sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
-    const itineraryByDay = sortedItinerary.reduce((acc, item) => {
+    const allItems = await dbGetItinerary();
+    const itineraryByDay = allItems.reduce((acc: Record<string, ItineraryItem[]>, item) => {
       (acc[item.date] = acc[item.date] || []).push(item);
       return acc;
-    }, {} as Record<string, typeof itinerary>);
+    }, {});
     const itineraryText = Object.entries(itineraryByDay).map(([date, items]) =>
-      `${date}:\n` + items.map(i => `  [${i.id}] ${i.time} — ${i.title} @ ${i.location} (${i.category})${i.notes ? '\n    Notes: ' + i.notes : ''}`).join('\n')
+      `${date}:\n` + (items as ItineraryItem[]).map((i: ItineraryItem) => `  [${i.id}] ${i.time} — ${i.title} @ ${i.location} (${i.category})${i.notes ? '\n    Notes: ' + i.notes : ''}`).join('\n')
     ).join('\n\n');
 
     const SYSTEM = `You are the AI concierge for a Baja California surf trip — dad, 16-yr-old, and friend, June 19–24 2026. You fly into SJD, base at Cerritos Beach Hotel (~1h15 north via Hwy 19), day-trip to Cabo (~1h south).
